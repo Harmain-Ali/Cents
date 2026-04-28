@@ -111,6 +111,7 @@ class StockDataFetcher:
                 # Profitability
                 "profit_margin": _get_num("profitMargins"),
                 "operating_margin": _get_num("operatingMargins"),
+                "gross_margins": _get_num("grossMargins"),
                 "roe": _get_num("returnOnEquity"),
                 "roa": _get_num("returnOnAssets"),
                 
