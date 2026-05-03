@@ -1,68 +1,81 @@
-"""
-Data Fetching Module
-
-Provides a simple interface for fetching stock data using yfinance.
-"""
-
 import yfinance as yf
 import pandas as pd
-from typing import Dict, Any, Optional
+from numbers import Real
+from typing import Dict, Any
 import warnings
 
 
-class StockDataFetcher:
+class DataFetcher:
     """
-    Simple stock data fetcher for Yahoo Finance.
+    A comprehensive stock data fetcher using Yahoo Finance API.
     
-    Provides methods to validate tickers, fetch historical data,
-    get company info, extract ML features, and access financial statements.
+    This class provides methods to fetch historical prices, company information,
+    quarterly income statements, dividend data, and combines them into a single
+    data structure.
+    
+    Attributes:
+        ticker_symbol (str): The stock ticker symbol (upper case)
+        period (str): Time period for historical data (e.g., '1y', '5y', 'max')
+        interval (str): Data interval (e.g., '1d', '1wk', '1mo')
+        stock (yf.Ticker): The yfinance Ticker object for the specified stock
     """
-
-    def validate_ticker(self, ticker: str) -> bool:
+    
+    def __init__(self, ticker: str, period: str = "1y", interval: str = "1d"):
         """
-        Check if a ticker symbol is valid.
-
+        Initialize the DATA_FETCHER with a stock ticker and data parameters.
+        
         Args:
-            ticker: Stock symbol (e.g., 'AAPL')
+            ticker (str): Stock ticker symbol (e.g., 'AAPL', 'MSFT', 'GOOGL')
+            period (str, optional): Historical data period. Defaults to "1y".
+                Valid values: '1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'
+            interval (str, optional): Data interval/frequency. Defaults to "1d".
+                Valid values: '1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo'
+        
+        Note:
+            This constructor assumes the ticker has been validated before instantiation.
+            The yfinance Ticker object is created immediately and reused for all data fetches.
+        """
+        self.ticker_symbol = ticker.upper()
+        self.period = period
+        self.interval = interval
 
+        # Create ticker object (reused for all data fetches to minimize API calls)
+        self.stock = yf.Ticker(self.ticker_symbol)
+    
+    def fetch_historical(self) -> Dict[str, Any]:
+        """
+        Fetch historical price data for the initialized ticker.
+        
+        Retrieves OHLCV (Open, High, Low, Close, Volume) data for the specified
+        period and interval. The data is cleaned by standardizing column names
+        and removing timezone information from the index.
+        
         Returns:
-            True if valid, False otherwise
+            Dict[str, Any]: A dictionary containing:
+                - 'data': pandas DataFrame with historical price data, or None if error
+                    Columns include: open, high, low, close, volume, dividends, stock splits
+                - 'error': Error message string if an error occurred, otherwise None
+        
+        Examples:
+            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> result = fetcher.fetch_historical()
+            >>> if result['error'] is None:
+            >>>     print(result['data'].head())
+        
+        Note:
+            The returned DataFrame index is datetime with timezone removed (naive).
+            Column names are standardized to lowercase with underscores.
         """
         try:
-            stock = yf.Ticker(ticker.upper())
-            hist = stock.history(period="1d")
-            return not hist.empty
-        except Exception:
-            return False
-
-    def fetch_historical(
-        self,
-        ticker: str,
-        period: str = "1y",
-        interval: str = "1d"
-        ) -> Dict[str, Any]:
-        """
-        Fetch historical price data.
-
-        Args:
-            ticker: Stock symbol
-            period: Time period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
-            interval: Data interval (1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo)
-
-        Returns:
-            Dictionary with 'data' (DataFrame) and 'error' keys
-        """
-        try:
-            stock = yf.Ticker(ticker.upper())
-            df = stock.history(period=period, interval=interval)
+            df = self.stock.history(period=self.period, interval=self.interval)
 
             if df.empty:
-                return {"data": None, "error": "No historical data found"}
+                return {"data": None, "error": f"No historical data found for {self.ticker_symbol}"}
 
-            # Clean column names
-            df.columns = [col.lower().replace(' ', '_') for col in df.columns]
+            # Clean column names (handle non-string columns safely)
+            df.columns = [str(col).lower().replace(' ', '_') for col in df.columns]
 
-            # Remove timezone from index
+            # Remove timezone from index if present
             if hasattr(df.index, "tz") and df.index.tz is not None:
                 df.index = df.index.tz_localize(None)
 
@@ -72,33 +85,78 @@ class StockDataFetcher:
             warnings.warn(f"Error fetching historical data: {e}")
             return {"data": None, "error": str(e)}
 
-    def fetch_info(self, ticker: str) -> Dict[str, Any]:
+    def fetch_info(self) -> Dict[str, Any]:
         """
-        Extract ML-ready numeric features for stock analysis.
-
-        Returns only the most important numeric metrics suitable for
-        machine learning models and quantitative scoring.
-
-        Args:
-            ticker: Stock symbol
-
+        Fetch comprehensive company information and fundamental metrics.
+        
+        Extracts key financial metrics, valuation ratios, growth indicators,
+        and market data from Yahoo Finance. The data is structured for
+        machine learning and quantitative analysis.
+        
         Returns:
-            Dictionary with 'data' (features dict) and 'error' keys
+            Dict[str, Any]: A dictionary containing:
+                - 'data': Dictionary of fundamental metrics (see structure below), or None if error
+                - 'error': Error message string if an error occurred, otherwise None
+        
+        The returned 'data' dictionary includes:
+            Basic Info: symbol, long_name, short_name, sector, industry
+            Price Info: current_price, previous_close
+            Valuation: pe_ratio, forward_pe, peg_ratio, price_to_book, ev_to_ebitda, price_to_sales
+            Profitability: profit_margin, operating_margin, gross_margin, roe, roa
+            EPS: trailing_eps, forward_eps
+            Growth: revenue_growth, earnings_growth, quarterly_earnings_growth
+            Financial Health: debt_to_equity, current_ratio, quick_ratio
+            Cash Flow: free_cash_flow, operating_cash_flow
+            Market: beta, market_cap, volume, avg_volume
+            Dividends: dividend_yield, payout_ratio
+        
+        Examples:
+            >>> fetcher = DATA_FETCHER('MSFT')
+            >>> result = fetcher.fetch_info()
+            >>> if result['error'] is None:
+            >>>     print(f"P/E Ratio: {result['data']['pe_ratio']}")
+            >>>     print(f"Market Cap: {result['data']['market_cap']}")
+        
+        Note:
+            Numeric fields may be None if the data is not available for the stock.
+            String fields may be None if the information is missing.
         """
         try:
-            stock = yf.Ticker(ticker.upper())
-            info = stock.info
-
+            info = self.stock.info
+            
             if not info:
-                return {"data": None, "error": f"No data found for {ticker}"}
-
+                return {"data": None, "error": f"No info data found for {self.ticker_symbol}"}
+            
             def _get_num(key):
-                """Helper to safely get numeric values."""
                 val = info.get(key)
-                return float(val) if isinstance(val, (int, float)) else None
 
+                if val is None or pd.isna(val):
+                    return None
+
+                if isinstance(val, Real):
+                    return float(val)
+
+                return None
+
+            def _get_str(key):
+                val = info.get(key)
+
+                if val is None or pd.isna(val):
+                    return None
+
+                return str(val)
+            
             features = {
-                "symbol": ticker.upper(),
+                # Basic Info
+                "symbol": _get_str("symbol"),
+                "long_name": _get_str("longName"),
+                "short_name": _get_str("shortName"),
+                "sector": _get_str("sector"),
+                "industry": _get_str("industry"),
+                
+                # Price Info
+                "current_price": _get_num("currentPrice"),
+                "previous_close": _get_num("previousClose"),
                 
                 # Valuation
                 "pe_ratio": _get_num("trailingPE"),
@@ -108,12 +166,14 @@ class StockDataFetcher:
                 "ev_to_ebitda": _get_num("enterpriseToEbitda"),
                 "price_to_sales": _get_num("priceToSalesTrailing12Months"),
                 
-                # Profitability
+                # Profitability & EPS
                 "profit_margin": _get_num("profitMargins"),
                 "operating_margin": _get_num("operatingMargins"),
-                "gross_margins": _get_num("grossMargins"),
+                "gross_margin": _get_num("grossMargins"),
                 "roe": _get_num("returnOnEquity"),
                 "roa": _get_num("returnOnAssets"),
+                "trailing_eps": _get_num("trailingEps"),
+                "forward_eps": _get_num("forwardEps"),
                 
                 # Growth
                 "revenue_growth": _get_num("revenueGrowth"),
@@ -126,8 +186,8 @@ class StockDataFetcher:
                 "quick_ratio": _get_num("quickRatio"),
                 
                 # Cash Flow
-                "free_cashflow": _get_num("freeCashflow"),
-                "operating_cashflow": _get_num("operatingCashflow"),
+                "free_cash_flow": _get_num("freeCashflow"),
+                "operating_cash_flow": _get_num("operatingCashflow"),
                 
                 # Market
                 "beta": _get_num("beta"),
@@ -141,113 +201,179 @@ class StockDataFetcher:
             }
             
             return {"data": features, "error": None}
-
+            
         except Exception as e:
             return {"data": None, "error": str(e)}
 
-    def fetch_financials(self, ticker: str) -> Dict[str, Any]:
+    def fetch_quarterly_income(self) -> Dict[str, Any]:
         """
-        Fetch financial statements.
-
-        Args:
-            ticker: Stock symbol
-
+        Fetch quarterly income statement data.
+        
+        Retrieves the quarterly income statement including revenue, cost of goods sold,
+        operating expenses, net income, and other financial metrics.
+        
         Returns:
-            Dictionary with income statement, balance sheet, and cash flow
+            Dict[str, Any]: A dictionary containing:
+                - 'data': pandas DataFrame with quarterly income statement data, or None if error
+                    Rows represent financial metrics, columns represent fiscal quarters
+                - 'error': Error message string if an error occurred, otherwise None
+        
+        Examples:
+            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> result = fetcher.fetch_quarterly_income()
+            >>> if result['error'] is None:
+            >>>     # Display the most recent quarter's data
+            >>>     print(result['data'].iloc[:, 0])
+        
+        Note:
+            The DataFrame structure: metrics as rows (e.g., 'Total Revenue', 'Net Income'),
+            quarters as columns. Returns None for stocks with no income statement data.
         """
         try:
-            stock = yf.Ticker(ticker.upper())
+            quarterly_income_sheet = self.stock.quarterly_income_stmt
+            
+            if quarterly_income_sheet is None or quarterly_income_sheet.empty:
+                return {"data": None, "error": f"No quarterly income data found for {self.ticker_symbol}"}
 
-            financials = {
-                'income_stmt': None,
-                'balance_sheet': None,
-                'cash_flow': None,
-                'quarterly_income': None,
-                'quarterly_balance': None,
-                'quarterly_cash_flow': None,
-                'error': None
-            }
-
-            # Fetch each statement individually (silently fail if not available)
-            try:
-                financials['income_stmt'] = stock.income_stmt
-            except Exception:
-                pass
-
-            try:
-                financials['balance_sheet'] = stock.balance_sheet
-            except Exception:
-                pass
-
-            try:
-                financials['cash_flow'] = stock.cashflow
-            except Exception:
-                pass
-
-            try:
-                financials['quarterly_income'] = stock.quarterly_income_stmt
-            except Exception:
-                pass
-
-            try:
-                financials['quarterly_balance'] = stock.quarterly_balance_sheet
-            except Exception:
-                pass
-
-            try:
-                financials['quarterly_cash_flow'] = stock.quarterly_cashflow
-            except Exception:
-                pass
-
-            return financials
-
+            # Normalize row/index names
+            quarterly_income_sheet.index = (
+                quarterly_income_sheet.index
+                .astype(str)
+                .str.lower()
+                .str.replace(" ", "_")
+            )
+            
+            return {"data": quarterly_income_sheet, "error": None}
+            
         except Exception as e:
-            warnings.warn(f"Error fetching financials: {e}")
-            return {'error': str(e)}
+            warnings.warn(f"Error fetching quarterly income: {e}")
+            return {"data": None, "error": str(e)}
 
-    def get_full_stock_data(self, ticker: str) -> Dict[str, Any]:
+    def fetch_dividends(self) -> Dict[str, Any]:
         """
-        Get complete stock data (info, historical prices, financials).
-
-        Args:
-            ticker: Stock symbol
-
-        Returns:
-            Dictionary with all stock data
-        """
-        ticker = ticker.upper()
+        Fetch dividend history for the initialized ticker.
         
-        return {
-            'ticker': ticker,
-            'info': self.fetch_info(ticker),
-            'history_1y': self.fetch_historical(ticker, period="1y"),
-            'history_5y': self.fetch_historical(ticker, period="5y"),
-            'financials': self.fetch_financials(ticker)
-        }
-
-    def get_batch_features(self, tickers: list) -> Dict[str, Any]:
-        """
-        Get features for multiple tickers at once.
-
-        Args:
-            tickers: List of stock symbols
-
+        Retrieves historical dividend payments including payment dates and amounts.
+        
         Returns:
-            Dictionary with ticker as key and features as value
+            Dict[str, Any]: A dictionary containing:
+                - 'data': pandas Series with dividend data, or None if error
+                    Index contains dividend payment dates, values are dividend amounts
+                - 'error': Error message string if an error occurred, otherwise None
+        
+        Examples:
+            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> result = fetcher.fetch_dividends()
+            >>> if result['error'] is None:
+            >>>     print(f"Total dividends paid: {result['data'].sum()}")
+            >>>     print(f"Last dividend: {result['data'].iloc[-1]} on {result['data'].index[-1]}")
+        
+        Note:
+            Returns None for stocks that do not pay dividends.
+            Dividend amounts are typically in raw currency units (not adjusted for splits).
         """
-        results = {}
-        for ticker in tickers:
-            results[ticker] = self.get_features(ticker)
-        return results
+        try:
+            dividends = self.stock.dividends
+            
+            if dividends is None or dividends.empty:
+                return {"data": None, "error": f"No dividends data found for {self.ticker_symbol}"}
+            
+            return {"data": dividends, "error": None}
+            
+        except Exception as e:
+            warnings.warn(f"Error fetching dividends: {e}")
+            return {"data": None, "error": str(e)}
+
+    def get_full_stock_data(self) -> Dict[str, Any]:
+        """
+        Fetch and combine all available stock data into a single dictionary.
+        
+        This method aggregates information from all individual fetch methods:
+        - Company information and fundamental metrics
+        - Historical price data
+        - Quarterly income statements
+        - Dividend history
+        
+        Each component is fetched independently, and errors are tracked separately
+        to allow partial data retrieval even if some components fail.
+        
+        Returns:
+            Dict[str, Any]: A comprehensive dictionary containing:
+                - 'ticker' (str): The stock ticker symbol
+                - 'info' (dict): Fundamental metrics from fetch_info(), or None if error
+                - 'history' (DataFrame): Historical prices from fetch_historical(), or None if error
+                - 'financials' (DataFrame): Quarterly income from fetch_quarterly_income(), or None if error
+                - 'dividends' (Series): Dividend history from fetch_dividends(), or None if error
+                - 'errors' (dict): Dictionary of error messages keyed by component name
+                - 'success' (bool): True if all components fetched successfully, False otherwise
+        
+        Examples:
+            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> data = fetcher.get_full_stock_data()
+            >>> 
+            >>> # Check if all data was fetched successfully
+            >>> if data['success']:
+            >>>     print(f"Company: {data['info']['short_name']}")
+            >>>     print(f"Current Price: ${data['info']['current_price']}")
+            >>>     print(f"Historical Data Shape: {data['history'].shape}")
+            >>>     print(f"Dividends Count: {len(data['dividends'])}")
+            >>> else:
+            >>>     print(f"Partial errors: {data['errors']}")
+            >>>     # Still access successfully fetched components
+            >>>     if data['info']:
+            >>>         print(f"Info available: {data['info']['symbol']}")
+        
+        Note:
+            This method does not prevent you from accessing individual components
+            even if others failed. Check the 'errors' dictionary or individual
+            component values (None indicates fetch failure).
+            All fetch methods reuse the same Ticker object to minimize API calls.
+        """
+        # Fetch each component once
+        info_result = self.fetch_info()
+        history_result = self.fetch_historical()
+        financials_result = self.fetch_quarterly_income()
+        dividends_result = self.fetch_dividends()
+        
+        # Build result with safe data extraction
+        result = {
+            'ticker': self.ticker_symbol,
+            'info': info_result.get("data") if info_result.get("error") is None else None,
+            'history': history_result.get("data") if history_result.get("error") is None else None,
+            'financials': financials_result.get("data") if financials_result.get("error") is None else None,
+            'dividends': dividends_result.get("data") if dividends_result.get("error") is None else None,
+            'errors': {},
+            'success': True
+        }
+        
+        # Collect non-null errors
+        if info_result.get("error"):
+            result['errors']['info'] = info_result["error"]
+            result['success'] = False
+
+        if history_result.get("error"):
+            result['errors']['history'] = history_result["error"]
+            result['success'] = False
+
+        if financials_result.get("error"):
+            result['errors']['financials'] = financials_result["error"]
+            result['success'] = False
+
+        if dividends_result.get("error"):
+            result['errors']['dividends'] = dividends_result["error"]
+            result['success'] = False
+        
+        return result
 
 
-# ============================================================================
-# Simple helper functions for quick access
-# ============================================================================
-
-def quick_info(ticker: str) -> Optional[Dict]:
-    """Quickly get company info for a ticker."""
-    fetcher = StockDataFetcher()
-    result = fetcher.fetch_info(ticker)
-    return result if result.get('error') is None else None
-
+# Example usage (commented out)
+# fetcher = DataFetcher("AAPL")
+# data = fetcher.get_full_stock_data()
+# 
+# # Check if all data was fetched successfully
+# if data['success']:
+#     print(f"Info: {data['info']['short_name']}")
+#     print(f"History shape: {data['history'].shape}")
+#     print(f"Dividends count: {len(data['dividends'])}")
+# else:
+#     print(f"Partial errors: {data['errors']}")
