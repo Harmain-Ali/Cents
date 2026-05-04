@@ -417,14 +417,25 @@ class DataFetcher:
         
         # Build result with safe data extraction
         result = {
-            'ticker': self.ticker_symbol,
-            'info': info_result.get("data") if info_result.get("error") is None else None,
-            'history': history_result.get("data") if history_result.get("error") is None else None,
-            'financials': financials_result.get("data") if financials_result.get("error") is None else None,
-            'dividends': dividends_result.get("data") if dividends_result.get("error") is None else None,
-            'errors': {},
-            'success': self.is_valid  # Only true if ticker is valid AND all fetches succeed
-        }
+        "ticker": self.ticker_symbol,
+
+        "info": info_result.get("data") if info_result.get("error") is None else {},
+
+        "history": {
+            "data": history_result.get("data") if history_result.get("error") is None else None
+        },
+
+        "dividends": {
+            "data": dividends_result.get("data") if dividends_result.get("error") is None else None
+        },
+
+        "financials": {
+            "data": financials_result.get("data") if financials_result.get("error") is None else None
+        },
+
+        "errors": {},
+        "success": self.is_valid
+    }
         
         # Collect non-null errors
         if info_result.get("error"):
