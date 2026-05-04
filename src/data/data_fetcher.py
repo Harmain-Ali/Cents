@@ -1,7 +1,7 @@
 import yfinance as yf
 import pandas as pd
 from numbers import Real
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import warnings
 
 
@@ -18,11 +18,12 @@ class DataFetcher:
         period (str): Time period for historical data (e.g., '1y', '5y', 'max')
         interval (str): Data interval (e.g., '1d', '1wk', '1mo')
         stock (yf.Ticker): The yfinance Ticker object for the specified stock
+        is_valid (bool): Whether the ticker is valid (set during initialization)
     """
     
     def __init__(self, ticker: str, period: str = "1y", interval: str = "1d"):
         """
-        Initialize the DATA_FETCHER with a stock ticker and data parameters.
+        Initialize the DataFetcher with a stock ticker and data parameters.
         
         Args:
             ticker (str): Stock ticker symbol (e.g., 'AAPL', 'MSFT', 'GOOGL')
@@ -32,8 +33,9 @@ class DataFetcher:
                 Valid values: '1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo'
         
         Note:
-            This constructor assumes the ticker has been validated before instantiation.
-            The yfinance Ticker object is created immediately and reused for all data fetches.
+            The ticker is validated during initialization. If invalid, the stock object
+            is still created but all fetch methods will return errors.
+            Use the is_valid attribute or validate_ticker() method to check validity.
         """
         self.ticker_symbol = ticker.upper()
         self.period = period
@@ -41,6 +43,68 @@ class DataFetcher:
 
         # Create ticker object (reused for all data fetches to minimize API calls)
         self.stock = yf.Ticker(self.ticker_symbol)
+        
+        # Validate the ticker during initialization
+        self.is_valid = self.validate_ticker()
+    
+    @classmethod
+    def validate_ticker_static(cls, ticker: str) -> bool:
+        """
+        Static method to validate a ticker without creating a class instance.
+        
+        Args:
+            ticker (str): Stock ticker symbol to validate
+            
+        Returns:
+            bool: True if ticker is valid and has data, False otherwise
+            
+        Examples:
+            >>> # Use without creating an instance
+            >>> is_valid = DataFetcher.validate_ticker_static("AAPL")
+            >>> if is_valid:
+            >>>     fetcher = DataFetcher("AAPL")
+            
+            >>> # Check multiple tickers
+            >>> tickers = ["AAPL", "INVALID", "MSFT"]
+            >>> valid_tickers = [t for t in tickers if DataFetcher.validate_ticker_static(t)]
+            >>> print(f"Valid tickers: {valid_tickers}")
+        """
+        try:
+            stock = yf.Ticker(ticker.upper())
+            # Try to fetch a small amount of data to verify the ticker exists
+            hist = stock.history(period="1d")
+            return not hist.empty
+        except Exception:
+            return False
+    
+    def validate_ticker(self) -> bool:
+        """
+        Validate if the current ticker exists and has data.
+        
+        This method checks whether the ticker symbol provided during initialization
+        corresponds to a valid stock with available data on Yahoo Finance.
+        
+        Returns:
+            bool: True if ticker is valid and has data, False otherwise
+            
+        Examples:
+            >>> fetcher = DataFetcher("AAPL")
+            >>> if fetcher.validate_ticker():
+            >>>     print("Valid ticker!")
+            >>> else:
+            >>>     print("Invalid ticker!")
+            
+            >>> # Check validity without fetching full data
+            >>> fetcher = DataFetcher("INVALID_TICKER")
+            >>> if not fetcher.is_valid:
+            >>>     print("Please provide a valid ticker symbol")
+        """
+        try:
+            # Try to fetch a small amount of data to verify the ticker exists
+            hist = self.stock.history(period="1d")
+            return not hist.empty
+        except Exception:
+            return False
     
     def fetch_historical(self) -> Dict[str, Any]:
         """
@@ -57,7 +121,7 @@ class DataFetcher:
                 - 'error': Error message string if an error occurred, otherwise None
         
         Examples:
-            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> fetcher = DataFetcher('AAPL')
             >>> result = fetcher.fetch_historical()
             >>> if result['error'] is None:
             >>>     print(result['data'].head())
@@ -66,6 +130,10 @@ class DataFetcher:
             The returned DataFrame index is datetime with timezone removed (naive).
             Column names are standardized to lowercase with underscores.
         """
+        # Check if ticker is valid first
+        if not self.is_valid:
+            return {"data": None, "error": f"Invalid ticker symbol: {self.ticker_symbol}"}
+        
         try:
             df = self.stock.history(period=self.period, interval=self.interval)
 
@@ -111,7 +179,7 @@ class DataFetcher:
             Dividends: dividend_yield, payout_ratio
         
         Examples:
-            >>> fetcher = DATA_FETCHER('MSFT')
+            >>> fetcher = DataFetcher('MSFT')
             >>> result = fetcher.fetch_info()
             >>> if result['error'] is None:
             >>>     print(f"P/E Ratio: {result['data']['pe_ratio']}")
@@ -121,6 +189,10 @@ class DataFetcher:
             Numeric fields may be None if the data is not available for the stock.
             String fields may be None if the information is missing.
         """
+        # Check if ticker is valid first
+        if not self.is_valid:
+            return {"data": None, "error": f"Invalid ticker symbol: {self.ticker_symbol}"}
+        
         try:
             info = self.stock.info
             
@@ -219,7 +291,7 @@ class DataFetcher:
                 - 'error': Error message string if an error occurred, otherwise None
         
         Examples:
-            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> fetcher = DataFetcher('AAPL')
             >>> result = fetcher.fetch_quarterly_income()
             >>> if result['error'] is None:
             >>>     # Display the most recent quarter's data
@@ -229,6 +301,10 @@ class DataFetcher:
             The DataFrame structure: metrics as rows (e.g., 'Total Revenue', 'Net Income'),
             quarters as columns. Returns None for stocks with no income statement data.
         """
+        # Check if ticker is valid first
+        if not self.is_valid:
+            return {"data": None, "error": f"Invalid ticker symbol: {self.ticker_symbol}"}
+        
         try:
             quarterly_income_sheet = self.stock.quarterly_income_stmt
             
@@ -262,7 +338,7 @@ class DataFetcher:
                 - 'error': Error message string if an error occurred, otherwise None
         
         Examples:
-            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> fetcher = DataFetcher('AAPL')
             >>> result = fetcher.fetch_dividends()
             >>> if result['error'] is None:
             >>>     print(f"Total dividends paid: {result['data'].sum()}")
@@ -272,6 +348,10 @@ class DataFetcher:
             Returns None for stocks that do not pay dividends.
             Dividend amounts are typically in raw currency units (not adjusted for splits).
         """
+        # Check if ticker is valid first
+        if not self.is_valid:
+            return {"data": None, "error": f"Invalid ticker symbol: {self.ticker_symbol}"}
+        
         try:
             dividends = self.stock.dividends
             
@@ -308,7 +388,7 @@ class DataFetcher:
                 - 'success' (bool): True if all components fetched successfully, False otherwise
         
         Examples:
-            >>> fetcher = DATA_FETCHER('AAPL')
+            >>> fetcher = DataFetcher('AAPL')
             >>> data = fetcher.get_full_stock_data()
             >>> 
             >>> # Check if all data was fetched successfully
@@ -343,7 +423,7 @@ class DataFetcher:
             'financials': financials_result.get("data") if financials_result.get("error") is None else None,
             'dividends': dividends_result.get("data") if dividends_result.get("error") is None else None,
             'errors': {},
-            'success': True
+            'success': self.is_valid  # Only true if ticker is valid AND all fetches succeed
         }
         
         # Collect non-null errors
@@ -364,6 +444,32 @@ class DataFetcher:
             result['success'] = False
         
         return result
+
+
+# ============================================================================
+# Helper function for quick validation without creating a class instance
+# ============================================================================
+
+def is_valid_ticker(ticker: str) -> bool:
+    """
+    Quick utility function to check if a ticker symbol is valid.
+    
+    Args:
+        ticker (str): Stock ticker symbol to validate
+        
+    Returns:
+        bool: True if ticker is valid, False otherwise
+        
+    Examples:
+        >>> if is_valid_ticker("AAPL"):
+        >>>     print("AAPL is a valid ticker")
+        >>> 
+        >>> # Filter a list of tickers
+        >>> tickers = ["AAPL", "INVALID", "MSFT", "GOOGL"]
+        >>> valid = [t for t in tickers if is_valid_ticker(t)]
+        >>> print(f"Valid tickers: {valid}")
+    """
+    return DataFetcher.validate_ticker_static(ticker)
 
 
 # Example usage (commented out)
