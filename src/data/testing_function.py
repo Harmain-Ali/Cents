@@ -2,8 +2,8 @@
 
 import pprint
 
-from data_fetcher import DataFetcher
-from metrics_engine import enrich_stock_data
+from src.data.data_fetcher import DataFetcher
+from src.data.metrics_engine import get_final_stock_data
 
 
 def run_test(ticker: str):
@@ -36,7 +36,7 @@ def run_test(ticker: str):
     # -----------------------------------
     # STEP 3: COMPUTE METRICS
     # -----------------------------------
-    enriched_data = enrich_stock_data(data)
+    enriched_data = get_final_stock_data(data)
 
     print("✅ Metrics computed successfully\n")
 
