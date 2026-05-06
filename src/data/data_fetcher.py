@@ -270,6 +270,9 @@ class DataFetcher:
                 # Dividends
                 "dividend_yield": _get_num("dividendYield"),
                 "payout_ratio": _get_num("payoutRatio"),
+
+                # analyst_ratings
+                'recommendation_key':  _get_str('recommendationKey'),
             }
             
             return {"data": features, "error": None}
