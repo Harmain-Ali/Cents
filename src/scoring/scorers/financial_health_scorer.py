@@ -1,51 +1,47 @@
 from src.scoring.scorers.base_scorer import BaseScorer
 from src.scoring.utils.safe_math import safe_float
 from src.scoring.utils.normalization import normalize_linear, normalize_inverse
-
+from src.scoring.config.sector_config import get_range
 
 class FinancialHealthScorer(BaseScorer):
     """
-    Calculate a financial health score based on leverage, liquidity, and free cash flow yield.
-
-    The score is a weighted combination:
-        - 30% debt-to-equity (inverse normalisation, 0–3 range, lower is better)
-        - 30% current ratio (linear normalisation, 0.5–4 range)
-        - 20% quick ratio (linear normalisation, 0.2–3 range)
-        - 20% free cash flow yield (linear normalisation, -5% to +15% FCF / market cap)
-
-    Returns:
-        dict: Contains 'score' (0–100) and 'details' with individual component scores.
+    Financial health score with sector‑aware liquidity ranges.
     """
 
     def calculate(self):
-        # Access data using schema keys (lowercase)
         info = self.data["info"]
+        sector = info.get("sector")
 
-        # --- Extract values with safe conversion ---
         debt_to_equity = safe_float(info.get("debt_to_equity"))
         current_ratio = safe_float(info.get("current_ratio"))
         quick_ratio = safe_float(info.get("quick_ratio"))
-        free_cash_flow = safe_float(info.get("free_cash_flow"))  # note underscore
+        free_cash_flow = safe_float(info.get("free_cash_flow"))
         market_cap = safe_float(info.get("market_cap"))
 
-        # --- 1. Debt-to-equity score (lower is better) ---
-        de_score = normalize_inverse(debt_to_equity, 0, 3)  # 0 → 100, 3 → 0
+        # D/E uses inverse normalisation – can keep default 0–3 for all
+        de_score = normalize_inverse(debt_to_equity, 0, 3)
 
-        # --- 2. Current ratio score (higher is better up to 4) ---
-        cr_score = normalize_linear(current_ratio, 0.5, 4)  # 0.5 → 0, 4 → 100
+        # Liquidity ranges from config
+        cr_min, cr_max = get_range(sector, "current_ratio", 0.5, 4)
+        qr_min, qr_max = get_range(sector, "quick_ratio", 0.2, 3)
 
-        # --- 3. Quick ratio score (higher is better up to 3) ---
-        qr_score = normalize_linear(quick_ratio, 0.2, 3)    # 0.2 → 0, 3 → 100
+        if cr_min is None:
+            cr_score = 50
+        else:
+            cr_score = normalize_linear(current_ratio, cr_min, cr_max)
 
-        # --- 4. Free cash flow yield score ---
+        if qr_min is None:
+            qr_score = 50
+        else:
+            qr_score = normalize_linear(quick_ratio, qr_min, qr_max)
+
+        # FCF yield
         if free_cash_flow is not None and market_cap is not None and market_cap != 0:
-            fcf_yield = free_cash_flow / market_cap
+            fcf_yield = (free_cash_flow / market_cap) * 100
         else:
             fcf_yield = None
+        fcf_score = normalize_linear(fcf_yield, -5, 15)
 
-        fcf_score = normalize_linear(fcf_yield, -0.05, 0.15)  # -5% → 0, +15% → 100
-
-        # --- Weighted final score ---
         raw_score = (
             de_score * 0.30 +
             cr_score * 0.30 +

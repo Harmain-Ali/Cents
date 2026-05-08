@@ -4,65 +4,138 @@ import pandas as pd
 from typing import Dict, Any
 
 
-def compute_dividend_metrics(data: Dict[str, Any], years: int = 5) -> Dict[str, Any]:
+def compute_dividend_metrics(
+    data: Dict[str, Any],
+    years: int = 5
+) -> Dict[str, Any]:
     """
-    Compute dividend metrics including years of payments, cuts, and CAGR.
+    Compute dividend-related metrics.
 
-    The function extracts a pandas Series of dividend payments from `data["dividends"]["data"]`,
-    resamples it to annual sums, and calculates the number of dividend‑paying years,
-    whether any cuts occurred, and the compound annual growth rate (CAGR) over the
-    last `years` (or fewer if insufficient data).
+    Metrics:
+    --------
+    1. dividend_years
+        Number of years with dividend payments.
 
-    If no dividend data exists or the series is empty, default values are inserted.
+    2. has_cuts
+        True if annual dividend decreased in any year.
 
-    Args:
-        data (Dict[str, Any]): Stock data dictionary. Must contain a "dividends" key
-            with a "data" field that is a pandas Series (datetime index, dividend amounts).
-        years (int, optional): Number of trailing years to consider. Defaults to 5.
+    3. dividend_cagr
+        Compound Annual Growth Rate of annual dividends.
 
-    Returns:
-        Dict[str, Any]: The same data dictionary with the following keys added/updated
-        under "dividends":
-            - dividend_years (int): Number of years with positive dividends.
-            - has_cuts (bool or None): True if any cut occurred in the period,
-              False if no cuts, None if insufficient data.
-            - dividend_cagr (float or None): CAGR percentage (annualised growth rate)
-              rounded to 2 decimal places, or 0 if not calculable.
+    Parameters
+    ----------
+    data : Dict[str, Any]
+        Stock data dictionary.
+
+    years : int, default=5
+        Number of recent completed years to analyze.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Updated stock data dictionary.
     """
+
     dividends = data.get("dividends", {})
     series = dividends.get("data")
 
-    if series is None or series.empty:
+    # ---------------------------------------------------------
+    # VALIDATION
+    # ---------------------------------------------------------
+
+    if series is None or not isinstance(series, pd.Series) or series.empty:
+
         dividends.update({
             "dividend_years": 0,
             "has_cuts": None,
             "dividend_cagr": None
         })
+
         return data
 
-    yearly = series.resample("YE").sum()
-    yearly = yearly.tail(years)
+    # ---------------------------------------------------------
+    # CLEAN SERIES
+    # ---------------------------------------------------------
+
+    series = series.dropna()
+
+    if series.empty:
+
+        dividends.update({
+            "dividend_years": 0,
+            "has_cuts": None,
+            "dividend_cagr": None
+        })
+
+        return data
+
+    # ---------------------------------------------------------
+    # ENSURE DATETIME INDEX
+    # ---------------------------------------------------------
+
+    series.index = pd.to_datetime(series.index)
+
+    # ---------------------------------------------------------
+    # SORT CHRONOLOGICALLY
+    # ---------------------------------------------------------
+
+    series = series.sort_index()
+
+    # ---------------------------------------------------------
+    # CONVERT QUARTERLY DIVIDENDS -> YEARLY TOTALS
+    # ---------------------------------------------------------
+
+    yearly = series.groupby(series.index.year).sum()
+
+    # ---------------------------------------------------------
+    # REMOVE CURRENT INCOMPLETE YEAR
+    # Prevents fake negative CAGR
+    # ---------------------------------------------------------
+
+    current_year = pd.Timestamp.now().year
+
+    yearly = yearly[yearly.index < current_year]
+
+    # ---------------------------------------------------------
+    # KEEP ONLY POSITIVE DIVIDEND YEARS
+    # ---------------------------------------------------------
+
     yearly = yearly[yearly > 0]
+
+    # ---------------------------------------------------------
+    # KEEP RECENT YEARS
+    # ---------------------------------------------------------
+
+    yearly = yearly.tail(years)
+
+    # ---------------------------------------------------------
+    # FINAL VALIDATION
+    # ---------------------------------------------------------
 
     n = len(yearly)
 
     if n == 0:
+
         result = {
             "dividend_years": 0,
-            "has_cuts": True,
-            "dividend_cagr": 0
+            "has_cuts": None,
+            "dividend_cagr": None
         }
-    elif n < 3:
+
+    elif n == 1:
+
         result = {
-            "dividend_years": n,
-            "has_cuts": False,
-            "dividend_cagr": 0
+            "dividend_years": 1,
+            "has_cuts": None,
+            "dividend_cagr": None
         }
+
     else:
+
         result = {
             "dividend_years": n,
             "has_cuts": _has_cuts(yearly),
-            "dividend_cagr": round(_calculate_cagr(yearly), 2)
+            "dividend_cagr": _calculate_cagr(yearly)
         }
 
     dividends.update(result)
@@ -70,43 +143,73 @@ def compute_dividend_metrics(data: Dict[str, Any], years: int = 5) -> Dict[str, 
     return data
 
 
-# -------- HELPERS --------
+# =========================================================
+# HELPERS
+# =========================================================
 
 def _has_cuts(series: pd.Series) -> bool:
     """
-    Detect if a dividend series contains any year‑over‑year cuts.
+    Detect dividend cuts in annual dividend totals.
 
-    Args:
-        series (pd.Series): Annual dividend amounts indexed by year.
+    Parameters
+    ----------
+    series : pd.Series
+        Annual dividend totals sorted chronologically.
 
-    Returns:
-        bool: True if any year's dividend is strictly less than the previous year,
-              otherwise False.
+    Returns
+    -------
+    bool
+        True if any year has lower dividends than previous year.
     """
+
     values = series.values
-    return any(values[i] < values[i - 1] for i in range(1, len(values)))
+
+    for i in range(1, len(values)):
+
+        if values[i] < values[i - 1]:
+            return True
+
+    return False
 
 
-def _calculate_cagr(series: pd.Series) -> float:
+def _calculate_cagr(series: pd.Series) -> float | None:
     """
-    Calculate the compound annual growth rate (CAGR) of a dividend series.
+    Calculate dividend CAGR.
 
-    CAGR = (end_value / start_value) ^ (1 / (n-1)) - 1, expressed as a percentage.
-    Assumes `series` contains at least 2 positive values and is sorted chronologically.
+    Formula:
+    CAGR = ((Ending / Beginning) ** (1 / Years)) - 1
 
-    Args:
-        series (pd.Series): Annual dividend amounts indexed by year,
-                            with at least 2 elements.
+    Parameters
+    ----------
+    series : pd.Series
+        Annual dividend totals sorted chronologically.
 
-    Returns:
-        float: CAGR as a percentage (e.g., 8.5 for 8.5%).
-               Returns 0 if the starting value is zero or the length is insufficient.
+    Returns
+    -------
+    float | None
+        CAGR percentage rounded to 2 decimals.
     """
+
     values = series.values
-    start, end = values[0], values[-1]
-    n = len(values) - 1
 
-    if start == 0 or n <= 0:
-        return 0
+    start = values[0]
+    end = values[-1]
 
-    return ((end / start) ** (1 / n) - 1) * 100
+    years = len(values) - 1
+
+    # ---------------------------------------------------------
+    # SAFETY CHECKS
+    # ---------------------------------------------------------
+
+    if start <= 0 or end <= 0 or years <= 0:
+        return None
+
+    try:
+
+        cagr = ((end / start) ** (1 / years) - 1) * 100
+
+        return round(float(cagr), 2)
+
+    except (ZeroDivisionError, ValueError, OverflowError):
+
+        return None

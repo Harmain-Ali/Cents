@@ -4,95 +4,186 @@ import pandas as pd
 from typing import Dict, Any
 
 
-def compute_growth_metrics(data: Dict[str, Any], num_quarters: int = 8) -> Dict[str, Any]:
+def compute_growth_metrics(
+    data: Dict[str, Any],
+    num_quarters: int = 8
+) -> Dict[str, Any]:
     """
-    Compute the number of quarters with positive year-over-year growth for revenue and earnings.
+    Compute quarterly growth and profitability metrics.
 
-    The function extracts quarterly financial data from `data["financials"]["data"]`, identifies
-    revenue and earnings rows, calculates YoY growth for up to `num_quarters` recent quarters,
-    and stores the average number of positive growth quarters under `financials["positive_quarters"]`.
+    Metrics
+    -------
+    1. positive_quarters
+        Average number of quarters with positive YoY
+        revenue and earnings growth. (Rounded integer)
 
-    Args:
-        data (Dict[str, Any]): Stock data dictionary. Must contain a "financials" key
-            with a "data" field that is a pandas DataFrame (index: metric names, columns: quarters).
-        num_quarters (int, optional): Number of trailing quarters to evaluate. Defaults to 8.
+    2. profitable_quarters
+        Number of quarters with positive net income.
 
-    Returns:
-        Dict[str, Any]: The same data dictionary with `financials["positive_quarters"]` updated:
-            - int: Average of positive YoY growth counts for revenue and earnings (rounded).
-            - None: If required data is missing.
+    Parameters
+    ----------
+    data : Dict[str, Any]
+        Stock data dictionary.
+
+    num_quarters : int, default=8
+        Number of recent quarters to analyze.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Updated stock data dictionary with keys:
+        - positive_quarters (int or None)
+        - profitable_quarters (int or None)
     """
+
     financials = data.get("financials", {})
     df = financials.get("data")
 
-    if df is None or df.empty:
+    # ---------------------------------------------------------
+    # VALIDATION
+    # ---------------------------------------------------------
+
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         financials["positive_quarters"] = None
+        financials["profitable_quarters"] = None
         return data
 
-    revenue = _get_row(df, ["total_revenue", "revenue"])
-    earnings = _get_row(df, ["net_income", "net_profit"])
+    # ---------------------------------------------------------
+    # FETCH ROWS (case‑insensitive)
+    # ---------------------------------------------------------
+
+    revenue = _get_row(
+        df,
+        [
+            "total_revenue",
+            "revenue",
+            "totalRevenue"
+        ]
+    )
+
+    earnings = _get_row(
+        df,
+        [
+            "net_income",
+            "net_profit",
+            "netIncome"
+        ]
+    )
 
     if revenue is None or earnings is None:
         financials["positive_quarters"] = None
+        financials["profitable_quarters"] = None
         return data
 
-    revenue = revenue.sort_index()
-    earnings = earnings.sort_index()
+    # ---------------------------------------------------------
+    # CLEAN + SORT
+    # ---------------------------------------------------------
 
-    rev_growth = _yoy_growth(revenue, num_quarters)
-    earn_growth = _yoy_growth(earnings, num_quarters)
+    revenue = revenue.dropna().sort_index()
+    earnings = earnings.dropna().sort_index()
 
-    rev_pos = sum(g > 0 for g in rev_growth)
-    earn_pos = sum(g > 0 for g in earn_growth)
+    # ---------------------------------------------------------
+    # KEEP MOST RECENT QUARTERS (+4 for YoY calculation)
+    # ---------------------------------------------------------
 
-    financials["positive_quarters"] = round((rev_pos + earn_pos) / 2)
+    revenue = revenue.tail(num_quarters + 4)
+    earnings = earnings.tail(num_quarters + 4)
+
+    # ---------------------------------------------------------
+    # YOY GROWTH
+    # ---------------------------------------------------------
+
+    rev_growth = _yoy_growth(revenue)
+    earn_growth = _yoy_growth(earnings)
+
+    # ---------------------------------------------------------
+    # POSITIVE GROWTH QUARTERS
+    # ---------------------------------------------------------
+
+    rev_positive = sum(g > 0 for g in rev_growth)
+    earn_positive = sum(g > 0 for g in earn_growth)
+
+    positive_quarters = round(
+        (rev_positive + earn_positive) / 2
+    )
+
+    # ---------------------------------------------------------
+    # PROFITABLE QUARTERS
+    # ---------------------------------------------------------
+
+    recent_earnings = earnings.tail(num_quarters)
+
+    profitable_quarters = int(
+        sum(v > 0 for v in recent_earnings)
+    )
+
+    # ---------------------------------------------------------
+    # SAVE RESULTS
+    # ---------------------------------------------------------
+
+    financials["positive_quarters"] = positive_quarters
+    financials["profitable_quarters"] = profitable_quarters
 
     return data
 
 
-# -------- HELPERS --------
+# =========================================================
+# HELPERS
+# =========================================================
 
 def _get_row(df: pd.DataFrame, names: list):
     """
-    Retrieve a row from a DataFrame by trying multiple possible index names.
+    Retrieve first matching row from dataframe (case‑insensitive).
 
-    Args:
-        df (pd.DataFrame): DataFrame with metrics as index.
-        names (list): List of string index names to try, in order of preference.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with metrics as index.
+    names : list
+        List of possible index names (strings).
 
-    Returns:
-        pandas.Series or None: The row (Series) corresponding to the first matching name,
-        or None if none of the names are found in the index.
+    Returns
+    -------
+    pd.Series or None
+        The row (Series) corresponding to the first matching name,
+        or None if none found.
     """
+    normalized_index = {
+        str(idx).lower(): idx
+        for idx in df.index
+    }
+
     for name in names:
-        if name in df.index:
-            return df.loc[name]
+        key = name.lower()
+        if key in normalized_index:
+            return df.loc[normalized_index[key]]
+
     return None
 
 
-def _yoy_growth(series: pd.Series, n: int):
+def _yoy_growth(series: pd.Series):
     """
-    Calculate year-over-year growth percentages for a quarterly time series.
+    Calculate quarterly year‑over‑year growth percentages.
 
-    For each quarter beyond the first four, computes (current - previous_year) / previous_year * 100.
-    Returns up to `n` most recent growth values (the last `n` valid quarters).
+    Formula:
+    Growth = ((Current - PreviousYearQuarter) / abs(Previous)) * 100
 
-    Args:
-        series (pd.Series): Quarterly time series indexed by date (sorted ascending).
-        n (int): Number of growth values to return (from the most recent end).
-
-    Returns:
-        list: List of growth percentages (float) for up to `n` quarters.
-              Empty list if fewer than 5 data points or insufficient previous values.
+    Returns a list of growth values for each quarter where a complete
+    4‑quarter lag exists.
     """
-    series = series.head(n + 4)
     growth = []
+    values = series.values
 
-    for i in range(4, len(series)):
-        curr = series.iloc[i]
-        prev = series.iloc[i - 4]
+    for i in range(4, len(values)):
+        current = values[i]
+        previous = values[i - 4]
 
-        if pd.notna(curr) and pd.notna(prev) and prev != 0:
-            growth.append(((curr - prev) / abs(prev)) * 100)
+        if (
+            pd.notna(current)
+            and pd.notna(previous)
+            and previous != 0
+        ):
+            g = ((current - previous) / abs(previous)) * 100
+            growth.append(float(g))
 
-    return growth[:n]
+    return growth

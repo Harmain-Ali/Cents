@@ -29,13 +29,13 @@ class GrowthScorer(BaseScorer):
         positive_quarters = safe_float(financials.get("positive_quarters"))
 
         # --- 1. Revenue growth score ---
-        rg_score = normalize_linear(revenue_growth, -0.20, 0.40)
+        rg_score = normalize_linear(revenue_growth, -20, 40)
 
         # --- 2. Earnings growth score ---
-        eg_score = normalize_linear(earnings_growth, -0.20, 0.40)
+        eg_score = normalize_linear(earnings_growth, -20, 40)
 
         # --- 3. EPS growth score ---
-        eps_score = normalize_linear(eps_growth, -0.20, 0.40)
+        eps_score = normalize_linear(eps_growth, -20, 40)
 
         # --- 4. Consistency score (number of quarters with positive growth, 0 to 8) ---
         consistency_score = normalize_linear(positive_quarters, 0, 8)

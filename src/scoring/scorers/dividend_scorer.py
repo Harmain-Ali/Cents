@@ -30,13 +30,13 @@ class DividendScorer(BaseScorer):
         has_cuts = dividends.get("has_cuts")  # boolean
 
         # --- 1. Dividend yield score (higher is better, typical range 0–10%) ---
-        dy_score = normalize_linear(dividend_yield, 0, 0.10)  # 0% → 0, 10% → 100
+        dy_score = normalize_linear(dividend_yield, 0, 10)
 
         # --- 2. Payout ratio score (lower is better, 0–150% range) ---
-        pr_score = normalize_inverse(payout_ratio, 0, 1.5)   # 0% → 100, 150% → 0
+        pr_score = normalize_inverse(payout_ratio, 0, 150)
 
         # --- 3. Dividend growth score (CAGR, range -10% to +20%) ---
-        dg_score = normalize_linear(dividend_cagr, -0.10, 0.20)  # -10% → 0, +20% → 100
+        dg_score = normalize_linear(dividend_cagr, -10, 20)
 
         # Penalise if there were any dividend cuts
         if has_cuts:

@@ -1,50 +1,36 @@
 from src.scoring.scorers.base_scorer import BaseScorer
 from src.scoring.utils.safe_math import safe_float
 from src.scoring.utils.normalization import normalize_linear
-
+from src.scoring.config.sector_config import get_range
 
 class ProfitabilityScorer(BaseScorer):
     """
-    Calculate a profitability score based on return ratios and margins.
-
-    The score is a weighted combination:
-        - 30% Return on Equity (ROE) – linear normalisation from 0% to 30%
-        - 20% Return on Assets (ROA) – linear normalisation from 0% to 20%
-        - 25% Profit margin – linear normalisation from 0% to 30%
-        - 15% Operating margin – linear normalisation from 0% to 30%
-        - 10% Gross margin – linear normalisation from 0% to 60%
-
-    Returns:
-        dict: Contains 'score' (0–100) and 'details' with individual component scores.
+    Profitability score with sector‑aware ROE/ROA ranges.
     """
 
     def calculate(self):
-        # Access data using schema keys (lowercase)
         info = self.data["info"]
+        sector = info.get("sector")
 
-        # --- Extract values with safe conversion ---
         roe = safe_float(info.get("roe"))
         roa = safe_float(info.get("roa"))
         profit_margin = safe_float(info.get("profit_margin"))
         operating_margin = safe_float(info.get("operating_margin"))
         gross_margin = safe_float(info.get("gross_margin"))
 
-        # --- 1. ROE score (0–30% range) ---
-        roe_score = normalize_linear(roe, 0, 30)
+        # Get ranges (defaults from config)
+        roe_min, roe_max = get_range(sector, "roe", 0, 30)
+        roa_min, roa_max = get_range(sector, "roa", 0, 20)
+        pm_min, pm_max = get_range(sector, "profit_margin", 0, 30)
+        om_min, om_max = get_range(sector, "operating_margin", 0, 35)
+        gm_min, gm_max = get_range(sector, "gross_margin", 0, 60)
 
-        # --- 2. ROA score (0–20% range) ---
-        roa_score = normalize_linear(roa, 0, 20)
+        roe_score = normalize_linear(roe, roe_min, roe_max) if roe_min is not None else 50
+        roa_score = normalize_linear(roa, roa_min, roa_max) if roa_min is not None else 50
+        pm_score = normalize_linear(profit_margin, pm_min, pm_max) if pm_min is not None else 50
+        om_score = normalize_linear(operating_margin, om_min, om_max) if om_min is not None else 50
+        gm_score = normalize_linear(gross_margin, gm_min, gm_max) if gm_min is not None else 50
 
-        # --- 3. Profit margin score (0–30% range) ---
-        pm_score = normalize_linear(profit_margin, 0, 0.30)
-
-        # --- 4. Operating margin score (0–30% range) ---
-        om_score = normalize_linear(operating_margin, 0, 0.30)
-
-        # --- 5. Gross margin score (0–60% range) ---
-        gm_score = normalize_linear(gross_margin, 0, 0.60)
-
-        # --- Weighted final score ---
         raw_score = (
             roe_score * 0.30 +
             roa_score * 0.20 +

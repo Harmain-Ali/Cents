@@ -7,6 +7,7 @@ from src.scoring.scorers.growth_scorer import GrowthScorer
 from src.scoring.scorers.financial_health_scorer import FinancialHealthScorer
 from src.scoring.scorers.dividend_scorer import DividendScorer
 from src.scoring.scorers.technical_scorer import TechnicalScorer
+from src.scoring.utils.metric_standardizer import MetricStandardizer
 
 
 class StockScorer:
@@ -32,7 +33,7 @@ class StockScorer:
     """
 
     def __init__(self, data, stock_type):
-        self.data = data
+        self.data = MetricStandardizer.standardize(data)
         self.stock_type = stock_type
         self.weights = WEIGHTS[stock_type]
 
