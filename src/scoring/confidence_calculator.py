@@ -34,7 +34,7 @@ class ConfidenceCalculator:
             category_scores (dict): Output from StockScorer (each contains "score")
 
         Returns:
-            dict: {"score": float (0–100), "details": {...}}
+            dict: {"score": float (0–100), "level": str, "details": {...}}
         """
         info = data.get("info", {})
         history = data.get("history", {})
@@ -61,8 +61,12 @@ class ConfidenceCalculator:
             depth * 0.15
         )
 
+        # Qualitative level based on score
+        level = cls._get_confidence_level(total)
+
         return {
             "score": round(total, 2),
+            "level": level,
             "details": {
                 "data_completeness": round(completeness, 2),
                 "stability": round(stability, 2),
@@ -70,6 +74,18 @@ class ConfidenceCalculator:
                 "history_depth": round(depth, 2),
             },
         }
+
+    @classmethod
+    def _get_confidence_level(cls, score):
+        """Convert numeric confidence score to qualitative label."""
+        if score >= 80:
+            return "High"
+        elif score >= 60:
+            return "Moderate"
+        elif score >= 40:
+            return "Low"
+        else:
+            return "Very Low"
 
     # ------------------------------------------------------------
     # Factor calculations (each returns 0–100)
