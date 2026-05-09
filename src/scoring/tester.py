@@ -11,7 +11,7 @@ from src.processes.stock_type_classifier import (
 from src.scoring.stock_scorer import StockScorer
 
 
-ticker = "BA"
+ticker = "aapl"
 
 print(f"\n=== Testing for ticker: {ticker} ===\n")
 

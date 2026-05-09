@@ -273,6 +273,7 @@ class DataFetcher:
 
                 # analyst_ratings
                 'recommendation_key':  _get_str('recommendationKey'),
+                'target_mean_price': _get_str('targetMeanPrice'),
             }
             
             return {"data": features, "error": None}

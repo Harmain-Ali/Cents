@@ -6,6 +6,8 @@ class RiskAdjustments:
 
     @staticmethod
     def apply(data, score):
+        if score is None:
+            score = 50.0
         info = data["info"]
         history = data["history"]
 
@@ -24,30 +26,30 @@ class RiskAdjustments:
         # Market cap
         if market_cap is not None:
             if market_cap < 2_000_000_000:
-                adjusted -= 5
+                adjusted -= 2
             elif market_cap > 200_000_000_000:
                 adjusted += 2
 
         # Beta
         if beta is not None:
             if beta > 1.5:
-                adjusted -= 3
+                adjusted -= 2
             elif beta < 0.5:
                 adjusted += 2
 
         # Sector risk – using config list
         if sector and sector in HIGH_RISK_SECTORS:
-            adjusted -= 3
+            adjusted -= 2
 
         # Dividend safety
         if payout_ratio is not None and free_cash_flow is not None:
             if payout_ratio > 1 and free_cash_flow < 0:
-                adjusted -= 4
+                adjusted -= 2
 
         # Value trap
         if pe is not None and earnings_growth is not None:
             if pe < 10 and earnings_growth < 0:
-                adjusted -= 5
+                adjusted -= 2
 
         # Weak momentum
         if ma50 is not None and ma200 is not None:
@@ -56,6 +58,6 @@ class RiskAdjustments:
 
         # Negative FCF
         if free_cash_flow is not None and free_cash_flow < 0:
-            adjusted -= 3
+            adjusted -= 2
 
         return adjusted

@@ -76,4 +76,4 @@ def _print_structure(data, indent=0):
 # -----------------------------------
 
 if __name__ == "__main__":
-    run_test("BA")   # change ticker here
+    run_test("amzn")   # change ticker here
