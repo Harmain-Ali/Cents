@@ -128,3 +128,46 @@ def get_range(sector: str, metric: str, default_min: float, default_max: float):
     if metric in DEFAULT_RANGES:
         return DEFAULT_RANGES[metric]
     return (default_min, default_max)
+
+
+# =========================================================
+# Interpretation thresholds (for human‑language summaries)
+# =========================================================
+
+DEFAULT_INTERPRETATION = {
+    "pe_ratio": {"cheap": 12, "fair": 20, "expensive": 25},
+    "peg_ratio": {"good": 0.8, "warning": 2.0},
+    "roe": {"weak": 8, "average": 15, "strong": 20},
+    "profit_margin": {"thin": 5, "healthy": 15},
+    "revenue_growth": {"declining": 0, "moderate": 10, "strong": 20},
+    "earnings_growth": {"declining": 0, "moderate": 10, "strong": 20},
+    "debt_to_equity": {"low": 0.5, "moderate": 1.0, "high": 1.5},
+    "current_ratio": {"low": 1.0, "good": 1.5, "high": 2.5},
+    "dividend_yield": {"low": 1, "attractive": 3, "high": 5},
+    "payout_ratio": {"safe": 60, "warning": 80},
+}
+
+SECTOR_INTERPRETATION = {
+    "Technology": {
+        "pe_ratio": {"cheap": 18, "fair": 28, "expensive": 35},
+        "roe": {"weak": 12, "average": 20, "strong": 30},
+    },
+    "Financial Services": {
+        "pe_ratio": {"cheap": 8, "fair": 12, "expensive": 16},
+        "debt_to_equity": {"low": 2, "moderate": 4, "high": 6},
+    },
+    "Utilities": {
+        "pe_ratio": {"cheap": 12, "fair": 18, "expensive": 22},
+        "dividend_yield": {"low": 3, "attractive": 5, "high": 7},
+    },
+}
+
+def get_interpretation(sector: str, metric: str) -> dict:
+    """
+    Return interpretation thresholds for a metric, sector‑aware.
+    """
+    base = DEFAULT_INTERPRETATION.get(metric, {}).copy()
+    if sector and sector in SECTOR_INTERPRETATION:
+        override = SECTOR_INTERPRETATION[sector].get(metric, {})
+        base.update(override)
+    return base
