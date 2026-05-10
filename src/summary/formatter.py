@@ -1,6 +1,6 @@
 """
 Formats the final summary text using templates.
-Contradictions are handled separately and never duplicated as risks.
+Handles 3‑tier recommendation (Buy/Hold/Sell).
 """
 
 import random
@@ -23,14 +23,12 @@ SUMMARY_TEMPLATES = {
 
 
 def format_summary(strengths, risks, neutrals, contradictions, recommendation, conf_level):
-    """Returns a clean, non‑duplicated summary string."""
+    """Returns a clean, non‑duplicated summary string using 3‑tier recommendation."""
 
     # Map recommendation to a word (no leading "a")
     rec_map = {
-        "Strong Buy": "strong buy",
         "Buy": "buy",
         "Hold": "hold",
-        "Weak Hold": "weak hold (consider waiting)",
         "Sell": "sell",
     }
     rec_phrase = rec_map.get(recommendation, "hold")
@@ -70,7 +68,6 @@ def format_summary(strengths, risks, neutrals, contradictions, recommendation, c
     else:
         summary = f"This stock has mixed signals. The recommendation is a {rec_phrase} recommendation with {conf_level} confidence."
 
-    # Append neutral insight if available
     if neutrals and "Notably" not in summary:
         summary += f" Notably, {neutrals[0]['text']}."
 

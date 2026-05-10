@@ -115,5 +115,5 @@ def analyze_ticker(ticker: str):
 
 if __name__ == "__main__":
     # You can change the ticker or pass as command line argument
-    ticker = sys.argv[1] if len(sys.argv) > 1 else "Asti"
+    ticker = sys.argv[1] if len(sys.argv) > 1 else "bb"
     analyze_ticker(ticker)
